@@ -1,5 +1,7 @@
 .classpath
+build/
 .project
+.gradle/
 .settings/
 
 META-INF/

@@ -1,0 +1,127 @@
+apply plugin: 'java'
+apply plugin: 'release'
+apply plugin: 'maven-publish'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+group = 'net.logstash.logging'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+release {
+    failOnSnapshotDependencies = true
+    allowLocalModifications = false
+    releaseDryRun = false
+    scm = 'git'
+}
+
+configurations {
+    redline
+}
+
+
+description = """logstash-util-formatter"""
+
+sourceCompatibility = 1.7
+targetCompatibility = 1.7
+
+configurations.all {}
+
+repositories {
+    mavenLocal()
+    maven {
+        url "http://dpdev.cho.usae.bah.com/nexus/content/groups/public"
+    }
+    maven {
+        url "http://dpdev.cho.usae.bah.com/nexus/content/groups/public-snapshots"
+    }
+}
+
+buildscript {
+    repositories {
+        maven {
+            url "http://dpdev.cho.usae.bah.com/nexus/content/groups/public"
+        }
+        maven {
+            url "http://dpdev.cho.usae.bah.com/nexus/content/groups/public-snapshots"
+        }
+        maven {
+            url "http://maven.tmatesoft.com/content/repositories/releases/"
+        }
+		maven {
+            url "http://jcenter.bintray.com/"
+        }
+        maven {
+            url 'http://maven.tmatesoft.com/content/repositories/releases/'
+        }
+        maven {
+            url 'http://maven.tmatesoft.com/content/repositories/snapshots/'
+        }
+    }
+    dependencies {
+        classpath 'au.com.ish.gradle:release:2.2.2'
+		classpath 'com.github.jengelman.gradle.plugins:shadow:1.1.1'
+    }
+}
+
+def getDate() {
+    def date = new Date()
+    def formattedDate = date.format('yyyyMMddHHmmss')
+    return formattedDate
+}
+
+allprojects {
+    version release.projectVersion
+    if (release.projectVersion.contains('SNAPSHOT')) {
+        project.ext.set("rpmRelease", getDate())
+        project.ext.set("rpmVersion",
+            release.projectVersion.replaceAll("-SNAPSHOT", ""))
+    } else {
+        project.ext.set("rpmRelease", "1")
+        project.ext.set("rpmVersion", release.projectVersion)
+    }
+}
+
+
+ext.rpmFile = file("$buildDir/distributions/$project.name-$project.version" + '.rpm')
+
+ext.rpmspec = {
+    rpmfileset(
+        prefix: '/usr/share/java',
+        userName: 'root',
+        group: 'root',
+        dir: 'build/libs',
+		includes: '*all.jar'
+    )
+	link(path:"/usr/share/java/${project.name}.jar",
+         target:"/usr/share/java/${project.name}-${project.version}-all.jar")
+}
+
+task buildRpm {
+    ext.destDir = new File(buildDir, 'distributions')
+    outputs.dir destDir
+    inputs.dir 'src/main'
+    doLast {
+        destDir.mkdirs()
+        ant.taskdef(resource: "org/redline_rpm/antlib.xml", classpath: configurations.redline.asPath, uri: 'antlib:org.redline_rpm')
+        ant.
+        'antlib:org.redline_rpm:rpm' (group: 'ECMS',
+            name: project.name, version: project.rpmVersion,
+            release: project.rpmRelease,
+            destination: destDir, rpmspec)
+        // Create a maven/nexus friendly file name
+        file("$buildDir/distributions/$project.name-$project.rpmVersion-$project.rpmRelease" + '.noarch.rpm').renameTo(rpmFile)
+    }
+}
+buildRpm.dependsOn shadowJar 
+assemble.dependsOn buildRpm
+publish.dependsOn build
+
+dependencies {
+    runtime group: 'org.glassfish', name: 'javax.json', version: '1.0'
+    redline group: 'org.redline-rpm', name: 'redline', version: '1.1.14'
+    testCompile group: 'junit', name: 'junit', version: '4.11'
+    compile group: 'javax.json', name: 'javax.json-api', version: '1.0'
+}
